@@ -1,0 +1,38 @@
+package main
+
+import (
+	"log"
+	"os"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+func main() {
+	// 1. Читаем токен из переменной окружения (объясню ниже)
+	token := os.Getenv("TELEGRAM_TOKEN")
+	if token == "" {
+		log.Fatal("Не задана переменная TELEGRAM_TOKEN")
+	}
+
+	// 2. Подключаемся к Telegram
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Бот авторизован как @%s", bot.Self.UserName)
+
+	// 3. Настраиваем получение сообщений
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates := bot.GetUpdatesChan(u)
+
+	// 4. Главный цикл: ждём сообщения и отвечаем
+	for update := range updates {
+		if update.Message == nil { // не сообщение? пропускаем
+			continue
+		}
+
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+		bot.Send(msg) // отвечаем тем же текстом
+	}
+}
