@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -14,7 +15,7 @@ func main() {
 		log.Fatal("Не задана переменная TELEGRAM_TOKEN")
 	}
 
-	// Проверяем подключение к базе
+	// Подключение к базе
 	db, err := openDB()
 	if err != nil {
 		log.Fatal("Ошибка базы:", err)
@@ -28,12 +29,12 @@ func main() {
 	}
 	log.Printf("Бот авторизован как @%s", bot.Self.UserName)
 
-	// Настраиваем получение сообщений
+	// Получение сообщений
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
 
-	// Главный цикл: ждём сообщения и отвечаем
+	// Главный цикл
 	for update := range updates {
 		if update.Message == nil {
 			continue
@@ -42,21 +43,18 @@ func main() {
 		text := update.Message.Text
 		chatID := update.Message.Chat.ID
 
-		// Разрезаем сообщение на слова
 		parts := strings.Fields(text)
 
-		// Сообщение должно быть хотя бы из двух слов: "/add" и название
-		if len(parts) < 2 {
-			msg := tgbotapi.NewMessage(chatID, "Напиши так: /add пить воду")
-			bot.Send(msg)
-			continue
-		}
+		// --- Команда /add ---
+		if len(parts) > 0 && parts[0] == "/add" {
+			if len(parts) < 2 {
+				msg := tgbotapi.NewMessage(chatID, "Напиши так: /add пить воду")
+				bot.Send(msg)
+				continue
+			}
 
-		if parts[0] == "/add" {
-			// Склеиваем все слова после /add обратно в название привычки
 			name := strings.Join(parts[1:], " ")
 
-			// Сохраняем в базу
 			_, err := db.Exec(
 				"INSERT INTO habits (chat_id, name) VALUES (?, ?)",
 				chatID, name,
@@ -69,6 +67,50 @@ func main() {
 
 			msg := tgbotapi.NewMessage(chatID, "Привычка \""+name+"\" добавлена! ✅")
 			bot.Send(msg)
+			continue
 		}
+
+		// --- Команда /list ---
+		if len(parts) > 0 && parts[0] == "/list" {
+			rows, err := db.Query(
+				"SELECT name FROM habits WHERE chat_id = ?", chatID)
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "Ошибка чтения базы 😢")
+				bot.Send(msg)
+				continue
+			}
+			defer rows.Close()
+
+			var names []string
+			for rows.Next() {
+				var name string
+				rows.Scan(&name)
+				names = append(names, name)
+			}
+			if err := rows.Err(); err != nil {
+				msg := tgbotapi.NewMessage(chatID, "Ошибка чтения базы 😢")
+				bot.Send(msg)
+				continue
+			}
+
+			if len(names) == 0 {
+				msg := tgbotapi.NewMessage(chatID, "У тебя пока нет привычек. Добавь: /add пить воду")
+				bot.Send(msg)
+				continue
+			}
+
+			answer := "Твои привычки:\n"
+			for i, name := range names {
+				answer += fmt.Sprintf("%d. %s\n", i+1, name)
+			}
+
+			msg := tgbotapi.NewMessage(chatID, answer)
+			bot.Send(msg)
+			continue
+		}
+
+		// --- Любое другое сообщение ---
+		msg := tgbotapi.NewMessage(chatID, "Команды: /add <название>, /list")
+		bot.Send(msg)
 	}
 }
