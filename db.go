@@ -24,5 +24,17 @@ func openDB() (*sql.DB, error) {
 		return nil, err
 	}
 
+	_, err = db.Exec(`
+    CREATE TABLE IF NOT EXISTS checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        habit_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        UNIQUE(habit_id, date)
+    )
+`)
+	if err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }

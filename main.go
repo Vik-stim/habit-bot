@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -112,5 +113,60 @@ func main() {
 		// --- Любое другое сообщение ---
 		msg := tgbotapi.NewMessage(chatID, "Команды: /add <название>, /list")
 		bot.Send(msg)
+
+		// --- Команда /done ---
+		if len(parts) > 0 && parts[0] == "/done" {
+			if len(parts) < 2 {
+				msg := tgbotapi.NewMessage(chatID, "Напиши так: /done пить воду")
+				bot.Send(msg)
+				continue
+			}
+
+			name := strings.Join(parts[1:], " ")
+
+			// Находим привычку по названию
+			var habitID int
+			err := db.QueryRow(
+				"SELECT id FROM habits WHERE chat_id = ? AND name = ?",
+				chatID, name,
+			).Scan(&habitID)
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "Такой привычки нет. Посмотри список: /list")
+				bot.Send(msg)
+				continue
+			}
+
+			// Сегодняшняя дата в формате 2026-10-20
+			today := time.Now().Format("2006-01-02")
+
+			// Вставляем отметку; если уже есть — UNIQUE не даст
+			res, err := db.Exec(
+				"INSERT OR IGNORE INTO checks (habit_id, date) VALUES (?, ?)",
+				habitID, today,
+			)
+			if err != nil {
+				msg := tgbotapi.NewMessage(chatID, "Ошибка сохранения 😢")
+				bot.Send(msg)
+				continue
+			}
+
+			// Сколько строк реально вставилось?
+			affected, _ := res.RowsAffected()
+			if affected == 0 {
+				msg := tgbotapi.NewMessage(chatID, "Сегодня уже отмечено! Возвращайся завтра 💪")
+				bot.Send(msg)
+				continue
+			}
+
+			// Считаем серию: сколько отметок у этой привычки
+			var count int
+			db.QueryRow(
+				"SELECT COUNT(*) FROM checks WHERE habit_id = ?", habitID,
+			).Scan(&count)
+
+			msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Отметил! Серия: %d дней 🔥", count))
+			bot.Send(msg)
+			continue
+		}
 	}
 }
